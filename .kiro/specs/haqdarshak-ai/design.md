@@ -1083,3 +1083,877 @@ While not part of unit/property testing, performance requirements should be vali
 - **Latency Testing**: Verify <10 second end-to-end response time
 - **OCR Performance**: Verify 85%+ accuracy on test document set
 
+
+## API Specifications
+
+### REST API Endpoints
+
+#### 1. POST /api/upload
+
+Upload a document for analysis.
+
+**Request**:
+```typescript
+Content-Type: multipart/form-data
+
+{
+  file: File, // JPG, PNG, or PDF
+  language: 'en' | 'hi'
+}
+```
+
+**Response** (200 OK):
+```json
+{
+  "success": true,
+  "documentId": "uuid-v4",
+  "s3Url": "https://s3.amazonaws.com/bucket/key",
+  "message": "Document uploaded successfully"
+}
+```
+
+**Error Responses**:
+- 400: Invalid file format or missing file
+- 413: File size exceeds 10MB
+- 500: S3 upload failure
+
+#### 2. POST /api/query
+
+Submit a text query for analysis.
+
+**Request**:
+```json
+{
+  "query": "string (max 500 chars)",
+  "language": "en" | "hi"
+}
+```
+
+**Response** (200 OK):
+```json
+{
+  "success": true,
+  "queryId": "uuid-v4",
+  "extractedIntent": "string",
+  "message": "Query processed successfully"
+}
+```
+
+**Error Responses**:
+- 400: Query too long or empty
+- 500: Processing failure
+
+#### 3. POST /api/analyze
+
+Analyze uploaded document or query.
+
+**Request**:
+```json
+{
+  "documentId": "uuid-v4", // Optional, for document analysis
+  "queryId": "uuid-v4", // Optional, for query analysis
+  "manualData": { // Optional, for manual entry fallback
+    "amount": 150.50,
+    "vendor": "ABC Store",
+    "chargeType": "mrp",
+    "date": "2024-01-15",
+    "products": [
+      {
+        "name": "Product A",
+        "price": 150.50,
+        "mrp": 140.00
+      }
+    ]
+  }
+}
+```
+
+**Response** (200 OK):
+```json
+{
+  "success": true,
+  "verdict": {
+    "status": "violation_detected" | "legal" | "insufficient_info",
+    "title": "Illegal Charge Detected",
+    "explanation": "The charged price of ₹150.50 exceeds the MRP of ₹140.00...",
+    "confidence": 95,
+    "disclaimer": "This is for informational purposes only..."
+  },
+  "structuredData": {
+    "amount": 150.50,
+    "vendor": "ABC Store",
+    "chargeType": "mrp",
+    "date": "2024-01-15",
+    "products": [
+      {
+        "name": "Product A",
+        "price": 150.50,
+        "mrp": 140.00
+      }
+    ],
+    "editable": true
+  },
+  "legalCitations": [
+    {
+      "law": "Legal Metrology Act, 2009",
+      "section": "18(1)",
+      "description": "No person shall sell or distribute...",
+      "relevance": 0.98
+    }
+  ],
+  "processingTimeMs": 8500
+}
+```
+
+**Error Responses**:
+- 400: Invalid documentId or queryId
+- 404: Document or query not found
+- 500: Analysis failure
+
+#### 4. POST /api/complaint
+
+Generate a complaint document.
+
+**Request**:
+```json
+{
+  "violationData": {
+    "documentId": "uuid-v4",
+    "structuredData": { /* ... */ },
+    "verdict": { /* ... */ },
+    "legalCitations": [ /* ... */ ]
+  },
+  "format": "whatsapp" | "email" | "pdf",
+  "userContact": { // Optional
+    "name": "John Doe",
+    "email": "john@example.com",
+    "phone": "+91-9876543210"
+  }
+}
+```
+
+**Response** (200 OK):
+```json
+{
+  "success": true,
+  "complaint": {
+    "format": "pdf",
+    "content": "To: Legal Metrology Department\n\nSubject: Complaint regarding MRP violation...",
+    "downloadUrl": "https://s3.amazonaws.com/bucket/complaint-uuid.pdf",
+    "recipientInfo": {
+      "authority": "Legal Metrology Department",
+      "email": "legalmetrology@example.gov.in",
+      "subject": "MRP Violation Complaint - ABC Store"
+    }
+  },
+  "generatedAt": "2024-01-15T10:30:00Z"
+}
+```
+
+**Error Responses**:
+- 400: Invalid violation data or format
+- 500: Complaint generation failure
+
+#### 5. GET /api/document/:documentId
+
+Retrieve document details and analysis status.
+
+**Response** (200 OK):
+```json
+{
+  "success": true,
+  "document": {
+    "id": "uuid-v4",
+    "s3Url": "https://...",
+    "fileType": "image/jpeg",
+    "uploadedAt": "2024-01-15T10:00:00Z",
+    "ocrStatus": "completed",
+    "ocrText": "Extracted text...",
+    "ocrConfidence": 92.5
+  }
+}
+```
+
+#### 6. DELETE /api/document/:documentId
+
+Delete a document and associated data.
+
+**Response** (200 OK):
+```json
+{
+  "success": true,
+  "message": "Document marked for deletion"
+}
+```
+
+### Lambda Function Interfaces
+
+#### OCR Lambda
+
+**Input Event**:
+```json
+{
+  "s3Bucket": "haqdarshak-documents",
+  "s3Key": "documents/uuid-v4.jpg",
+  "documentId": "uuid-v4"
+}
+```
+
+**Output**:
+```json
+{
+  "documentId": "uuid-v4",
+  "extractedText": "Bill\nABC Store\nTotal: ₹150.50...",
+  "confidence": 92.5,
+  "language": "en",
+  "processingTimeMs": 3200
+}
+```
+
+#### Data Extraction Lambda
+
+**Input Event**:
+```json
+{
+  "text": "Bill\nABC Store\nTotal: ₹150.50...",
+  "source": "ocr",
+  "language": "en"
+}
+```
+
+**Output**:
+```json
+{
+  "structuredData": {
+    "amount": 150.50,
+    "vendor": "ABC Store",
+    "chargeType": "mrp",
+    "date": "2024-01-15",
+    "products": []
+  },
+  "confidence": {
+    "amount": 0.95,
+    "vendor": 0.88,
+    "chargeType": 0.92,
+    "date": 0.85
+  },
+  "extractionMethod": "bedrock"
+}
+```
+
+#### RAG Query Lambda
+
+**Input Event**:
+```json
+{
+  "structuredData": {
+    "amount": 150.50,
+    "chargeType": "mrp"
+  },
+  "query": "charged above MRP",
+  "language": "en"
+}
+```
+
+**Output**:
+```json
+{
+  "matchedRules": [
+    {
+      "rule_id": "LM_MRP_001",
+      "category": "mrp",
+      "law": "Legal Metrology Act, 2009",
+      "section": "18(1)",
+      "description": "No person shall sell...",
+      "violation_keywords": ["MRP", "overcharge"],
+      "penalty": "Fine up to ₹25,000",
+      "authority": "Legal Metrology Department",
+      "complaint_template_id": "TMPL_MRP_001"
+    }
+  ],
+  "relevanceScores": [0.98],
+  "queryEmbedding": [0.123, 0.456, ...],
+  "cacheHit": false
+}
+```
+
+## Security Considerations
+
+### Authentication and Authorization
+
+**Phase 1 (MVP)**: No authentication required
+- Session-based tracking using anonymous session IDs
+- Rate limiting by IP address
+- No user accounts or login
+
+**Phase 2 (Future)**: Optional user accounts
+- OAuth 2.0 integration (Google, Phone OTP)
+- JWT-based authentication
+- Role-based access control for admin functions
+
+### Data Protection
+
+#### 1. Encryption
+
+**At Rest**:
+- S3 documents: AES-256 encryption
+- Database: Supabase encryption at rest
+- Secrets: AWS Secrets Manager
+
+**In Transit**:
+- TLS 1.3 for all API communications
+- HTTPS only (no HTTP)
+- Certificate pinning for mobile apps (future)
+
+#### 2. PII Handling
+
+**Minimization**:
+- Collect only essential data
+- No user contact info stored without consent
+- Anonymous session IDs instead of user tracking
+
+**Anonymization**:
+- Remove names, phone numbers, emails from analytics data
+- Hash vendor names for aggregation
+- Redact specific addresses
+
+**Retention**:
+- Documents auto-deleted after 30 days
+- Analysis results retained for 90 days
+- Complaint history retained for 1 year (if user consents)
+
+#### 3. Access Control
+
+**S3 Bucket Policies**:
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "lambda.amazonaws.com"
+      },
+      "Action": ["s3:GetObject", "s3:PutObject"],
+      "Resource": "arn:aws:s3:::haqdarshak-documents/*"
+    }
+  ]
+}
+```
+
+**Lambda IAM Roles**:
+- Principle of least privilege
+- Separate roles for each Lambda function
+- No wildcard permissions
+
+**Database Access**:
+- Row-level security in Supabase
+- Connection pooling with limited connections
+- Read-only replicas for analytics
+
+### Input Validation
+
+#### File Upload Validation
+
+```typescript
+function validateUpload(file: File): ValidationResult {
+  // File type check
+  const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf'];
+  if (!allowedTypes.includes(file.type)) {
+    return { valid: false, error: 'INVALID_FILE_TYPE' };
+  }
+  
+  // File size check
+  const maxSizeBytes = 10 * 1024 * 1024; // 10MB
+  if (file.size > maxSizeBytes) {
+    return { valid: false, error: 'FILE_TOO_LARGE' };
+  }
+  
+  // File name sanitization
+  const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+  
+  // Magic number validation (check actual file content)
+  const magicNumbers = {
+    'image/jpeg': [0xFF, 0xD8, 0xFF],
+    'image/png': [0x89, 0x50, 0x4E, 0x47],
+    'application/pdf': [0x25, 0x50, 0x44, 0x46]
+  };
+  
+  return { valid: true, sanitizedName };
+}
+```
+
+#### Query Validation
+
+```typescript
+function validateQuery(query: string): ValidationResult {
+  // Length check
+  if (query.length === 0 || query.length > 500) {
+    return { valid: false, error: 'INVALID_QUERY_LENGTH' };
+  }
+  
+  // SQL injection prevention (parameterized queries)
+  // XSS prevention (sanitize before display)
+  const sanitized = sanitizeHtml(query, {
+    allowedTags: [],
+    allowedAttributes: {}
+  });
+  
+  return { valid: true, sanitized };
+}
+```
+
+#### Structured Data Validation
+
+```typescript
+function validateStructuredData(data: any): ValidationResult {
+  const schema = {
+    amount: { type: 'number', min: 0, max: 10000000 },
+    vendor: { type: 'string', maxLength: 200 },
+    chargeType: { type: 'enum', values: ['mrp', 'service_charge', 'challan', 'other'] },
+    date: { type: 'date', min: '2000-01-01', max: 'today+1' }
+  };
+  
+  // Validate against schema
+  // Return validation errors
+}
+```
+
+### Rate Limiting
+
+**API Gateway Throttling**:
+```typescript
+const rateLimits = {
+  '/api/upload': {
+    rateLimit: 10, // requests per minute
+    burstLimit: 20
+  },
+  '/api/query': {
+    rateLimit: 30,
+    burstLimit: 50
+  },
+  '/api/analyze': {
+    rateLimit: 20,
+    burstLimit: 40
+  },
+  '/api/complaint': {
+    rateLimit: 10,
+    burstLimit: 15
+  }
+};
+```
+
+**IP-based Rate Limiting**:
+- Track requests per IP in Redis
+- Block IPs exceeding limits for 1 hour
+- Whitelist for known good actors
+
+### Security Headers
+
+```typescript
+const securityHeaders = {
+  'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'X-XSS-Protection': '1; mode=block',
+  'Content-Security-Policy': "default-src 'self'; img-src 'self' data: https:; script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+  'Referrer-Policy': 'strict-origin-when-cross-origin'
+};
+```
+
+### Vulnerability Management
+
+**Dependency Scanning**:
+- Automated npm audit in CI/CD
+- Dependabot for security updates
+- Regular dependency updates
+
+**Code Scanning**:
+- Static analysis with ESLint security plugins
+- SAST tools (Snyk, SonarQube)
+- Regular security audits
+
+**Penetration Testing**:
+- Annual third-party penetration testing
+- Bug bounty program (future)
+- Responsible disclosure policy
+
+### Compliance
+
+**Indian Data Protection**:
+- Comply with Digital Personal Data Protection Act, 2023
+- Data localization (store data in India region)
+- User consent management
+- Right to deletion
+
+**Consumer Protection**:
+- Accurate legal information
+- Clear disclaimers
+- No misleading claims
+- Transparent data usage
+
+## Deployment Architecture
+
+### Infrastructure as Code
+
+**AWS CDK Stack**:
+```typescript
+export class HaqDarshakStack extends Stack {
+  constructor(scope: Construct, id: string, props?: StackProps) {
+    super(scope, id, props);
+    
+    // S3 Bucket for documents
+    const documentBucket = new s3.Bucket(this, 'DocumentBucket', {
+      encryption: s3.BucketEncryption.S3_MANAGED,
+      lifecycleRules: [
+        {
+          expiration: Duration.days(30),
+          id: 'DeleteOldDocuments'
+        }
+      ],
+      cors: [
+        {
+          allowedMethods: [s3.HttpMethods.POST, s3.HttpMethods.GET],
+          allowedOrigins: ['https://haqdarshak.ai'],
+          allowedHeaders: ['*']
+        }
+      ]
+    });
+    
+    // Lambda Functions
+    const ocrLambda = new lambda.Function(this, 'OCRLambda', {
+      runtime: lambda.Runtime.NODEJS_18_X,
+      handler: 'ocr.handler',
+      code: lambda.Code.fromAsset('lambda/ocr'),
+      timeout: Duration.seconds(30),
+      memorySize: 2048,
+      environment: {
+        BUCKET_NAME: documentBucket.bucketName
+      }
+    });
+    
+    // API Gateway
+    const api = new apigateway.RestApi(this, 'HaqDarshakAPI', {
+      restApiName: 'HaqDarshak API',
+      deployOptions: {
+        throttlingRateLimit: 100,
+        throttlingBurstLimit: 200
+      }
+    });
+    
+    // ... additional resources
+  }
+}
+```
+
+### CI/CD Pipeline
+
+**GitHub Actions Workflow**:
+```yaml
+name: Deploy HaqDarshak AI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run test
+      - run: npm run test:property
+  
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v3
+      - uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1
+      - run: npm ci
+      - run: npm run build
+      - run: npx cdk deploy --require-approval never
+```
+
+### Monitoring and Observability
+
+**CloudWatch Metrics**:
+- Lambda invocation count, duration, errors
+- API Gateway request count, latency, 4xx/5xx errors
+- S3 bucket size, request count
+- Bedrock API usage and costs
+
+**CloudWatch Alarms**:
+- Lambda error rate > 5%
+- API latency > 10 seconds
+- S3 upload failures
+- Bedrock throttling
+
+**Logging**:
+- Structured JSON logs
+- Correlation IDs for request tracing
+- Log aggregation in CloudWatch Logs
+- Log retention: 30 days
+
+**Distributed Tracing**:
+- AWS X-Ray for request tracing
+- Trace Lambda cold starts
+- Identify performance bottlenecks
+
+### Disaster Recovery
+
+**Backup Strategy**:
+- Database: Daily automated backups (Supabase)
+- S3: Versioning enabled
+- Legal rules: Version controlled in Git
+
+**Recovery Objectives**:
+- RTO (Recovery Time Objective): 4 hours
+- RPO (Recovery Point Objective): 24 hours
+
+**Failover Plan**:
+1. Switch to backup Bedrock region if primary fails
+2. Serve cached legal rules if database unavailable
+3. Queue uploads if S3 unavailable
+4. Display maintenance page if all services down
+
+## Performance Optimization
+
+### Caching Strategy
+
+**Multi-Level Caching**:
+
+1. **Browser Cache** (Service Worker):
+   - Cache static assets (JS, CSS, images)
+   - Cache legal rules for offline access
+   - Cache user's language preference
+
+2. **CDN Cache** (CloudFront):
+   - Cache static frontend assets
+   - Cache API responses for common queries
+   - Edge locations in India for low latency
+
+3. **Application Cache** (Redis):
+   - Cache legal rules (24 hour TTL)
+   - Cache OCR results (1 hour TTL)
+   - Cache Bedrock embeddings (query hash → embedding)
+
+4. **Database Query Cache**:
+   - Supabase query caching
+   - Materialized views for analytics
+
+### Lambda Optimization
+
+**Cold Start Reduction**:
+- Provisioned concurrency for critical Lambdas
+- Minimize deployment package size
+- Use Lambda layers for shared dependencies
+- Keep functions warm with scheduled pings
+
+**Memory Allocation**:
+- OCR Lambda: 2048 MB (CPU-intensive)
+- Data Extraction Lambda: 1024 MB
+- RAG Query Lambda: 1024 MB
+- Complaint Generation Lambda: 512 MB
+
+**Parallel Processing**:
+```typescript
+async function analyzeDocument(documentId: string) {
+  // Run OCR and legal rule loading in parallel
+  const [ocrResult, legalRules] = await Promise.all([
+    invokeOCRLambda(documentId),
+    loadLegalRules() // From cache
+  ]);
+  
+  // Then run extraction and RAG in sequence
+  const structuredData = await extractData(ocrResult.text);
+  const matchedRules = await queryRAG(structuredData, legalRules);
+  
+  return { structuredData, matchedRules };
+}
+```
+
+### Database Optimization
+
+**Indexing Strategy**:
+```sql
+-- Frequently queried fields
+CREATE INDEX idx_documents_session ON documents(user_session_id);
+CREATE INDEX idx_documents_uploaded ON documents(uploaded_at);
+CREATE INDEX idx_analyses_document ON analyses(document_id);
+
+-- Full-text search on legal rules
+CREATE INDEX idx_legal_rules_description ON legal_rules USING GIN(to_tsvector('english', description));
+
+-- Composite index for common queries
+CREATE INDEX idx_analyses_session_date ON analyses(user_session_id, created_at DESC);
+```
+
+**Connection Pooling**:
+```typescript
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+  db: {
+    poolSize: 10,
+    idleTimeoutMillis: 30000
+  }
+});
+```
+
+### Frontend Optimization
+
+**Code Splitting**:
+```typescript
+// Lazy load heavy components
+const ComplaintGenerator = lazy(() => import('./ComplaintGenerator'));
+const PDFViewer = lazy(() => import('./PDFViewer'));
+```
+
+**Image Optimization**:
+- Next.js Image component for automatic optimization
+- WebP format with JPEG fallback
+- Responsive images for different screen sizes
+- Lazy loading for below-the-fold images
+
+**Bundle Size Reduction**:
+- Tree shaking unused code
+- Dynamic imports for routes
+- Minimize third-party dependencies
+- Use lightweight alternatives (e.g., date-fns instead of moment.js)
+
+## Internationalization (i18n)
+
+### Translation Management
+
+**Translation Files**:
+```typescript
+// locales/en.json
+{
+  "landing": {
+    "title": "Know Your Rights, Protect Your Money",
+    "uploadButton": "Upload Bill",
+    "queryButton": "Ask Question"
+  },
+  "verdict": {
+    "violation": "Illegal Charge Detected",
+    "legal": "Charge Appears Legal",
+    "disclaimer": "This is for informational purposes only..."
+  }
+}
+
+// locales/hi.json
+{
+  "landing": {
+    "title": "अपने अधिकार जानें, अपने पैसे बचाएं",
+    "uploadButton": "बिल अपलोड करें",
+    "queryButton": "प्रश्न पूछें"
+  },
+  "verdict": {
+    "violation": "अवैध शुल्क का पता चला",
+    "legal": "शुल्क कानूनी प्रतीत होता है",
+    "disclaimer": "यह केवल सूचनात्मक उद्देश्यों के लिए है..."
+  }
+}
+```
+
+**Translation Hook**:
+```typescript
+function useTranslation() {
+  const { language } = useLanguage();
+  const translations = language === 'hi' ? hiTranslations : enTranslations;
+  
+  const t = (key: string) => {
+    const keys = key.split('.');
+    let value = translations;
+    for (const k of keys) {
+      value = value[k];
+    }
+    return value || key;
+  };
+  
+  return { t, language };
+}
+```
+
+### Number and Date Formatting
+
+```typescript
+function formatCurrency(amount: number, language: string): string {
+  return new Intl.NumberFormat(language === 'hi' ? 'hi-IN' : 'en-IN', {
+    style: 'currency',
+    currency: 'INR'
+  }).format(amount);
+}
+
+function formatDate(date: Date, language: string): string {
+  return new Intl.DateTimeFormat(language === 'hi' ? 'hi-IN' : 'en-IN', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  }).format(date);
+}
+```
+
+## Future Enhancements
+
+### Phase 2 Features
+
+1. **Expanded Legal Coverage**:
+   - GST violations
+   - Banking charges
+   - Insurance mis-selling
+   - Real estate violations
+
+2. **User Accounts**:
+   - Save complaint history
+   - Track complaint status
+   - Receive notifications
+
+3. **Government Integration**:
+   - Direct complaint filing to authorities
+   - Real-time status updates
+   - Digital signatures
+
+4. **Community Features**:
+   - Share violations anonymously
+   - Crowdsourced violation database
+   - Merchant ratings
+
+5. **Advanced Analytics**:
+   - Violation trends by region
+   - Merchant violation history
+   - Success rate of complaints
+
+### Scalability Roadmap
+
+**10K Users**:
+- Current architecture sufficient
+- Basic monitoring
+
+**100K Users**:
+- Add Redis caching
+- Increase Lambda concurrency limits
+- CDN for static assets
+
+**1M Users**:
+- Multi-region deployment
+- Read replicas for database
+- Advanced caching strategies
+
+**10M+ Users**:
+- Microservices architecture
+- Event-driven processing
+- Dedicated OCR infrastructure
+- Multi-tenant database sharding
+
