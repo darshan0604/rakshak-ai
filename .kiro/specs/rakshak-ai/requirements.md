@@ -1,14 +1,14 @@
-# Requirements Document: HaqDarshak AI
+# Requirements Document: RakshakAI
 
 ## Introduction
 
-HaqDarshak AI is an AI-powered legal violation detector designed for Indian citizens to instantly verify if they're being illegally charged by scanning bills, challans, or receipts. The system addresses the core problem of citizens losing money daily due to illegal charges (MRP overcharging, unauthorized service charges, inflated traffic fines) because they lack knowledge of their legal rights at the moment of transaction.
+RakshakAI is an AI-powered legal violation detector designed for Indian citizens to instantly verify if they're being illegally charged by scanning bills, challans, or receipts. The system addresses the core problem of citizens losing money daily due to illegal charges (MRP overcharging, unauthorized service charges, inflated traffic fines) because they lack knowledge of their legal rights at the moment of transaction.
 
 The solution provides instant verification against Indian consumer protection laws, generates ready-to-send legal complaints, and empowers citizens with actionable enforcement tools.
 
 ## Glossary
 
-- **System**: The HaqDarshak AI application
+- **System**: The RakshakAI application
 - **User**: Indian citizen using the application to verify charges
 - **OCR_Engine**: Optical Character Recognition component for text extraction
 - **RAG_System**: Retrieval-Augmented Generation system for legal rule matching

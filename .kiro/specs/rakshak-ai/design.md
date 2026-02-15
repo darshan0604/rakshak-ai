@@ -950,7 +950,7 @@ Both approaches are complementary and necessary. Unit tests catch concrete bugs 
 
 **Tag Format**:
 ```typescript
-// Feature: haqdarshak-ai, Property 1: Language Consistency
+// Feature: rakshak-ai, Property 1: Language Consistency
 test('responses match input language', async () => {
   await fc.assert(
     fc.asyncProperty(
